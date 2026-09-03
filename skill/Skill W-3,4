@@ -1,0 +1,208 @@
+A
+ON T.Account_No = A.Account_No
+JOIN Customer C
+ON A.Customer_ID = C.Customer_ID;
+
+SELECT * FROM Transaction_View;
+
+DELIMITER //
+
+CREATE TRIGGER CheckBalance
+BEFORE UPDATE ON Account
+FOR EACH ROW
+BEGIN
+IF NEW.Balance < 0 THEN
+SIGNAL SQLSTATE '45000'
+SET MESSAGE_TEXT = 'Transaction failed: Insufficient balance';
+END IF;
+END //
+
+DELIMITER ;
+
+DELIMITER //
+
+CREATE TRIGGER CheckTransactionAmount
+BEFORE INSERT ON Bank_Transaction
+FOR EACH ROW
+BEGIN
+IF NEW.Amount <= 0 THEN
+SIGNAL SQLSTATE '45000'
+SET MESSAGE_TEXT = 'Transaction amount must be greater than zero';
+END IF;
+END //
+
+DELIMITER ;
+DELIMITER //
+
+CREATE TRIGGER TransactionAudit
+AFTER INSERT ON Bank_Transaction
+FOR EACH ROW
+BEGIN
+INSERT INTO Transaction_Audit
+(
+Transaction_ID,
+Account_No,
+Transaction_Type,
+Amount
+)
+VALUES
+(
+NEW.Transaction_ID,
+NEW.Account_No,
+NEW.Transaction_Type,
+NEW.Amount
+);
+END //
+
+DELIMITER ;
+
+USE BankDB;
+
+DROP PROCEDURE IF EXISTS GetAllCustomers;
+DROP PROCEDURE IF EXISTS GetAccountDetails;
+DROP PROCEDURE IF EXISTS GetCustomerAccounts;
+DROP PROCEDURE IF EXISTS DepositMoney;
+DROP PROCEDURE IF EXISTS WithdrawMoney;
+DROP PROCEDURE IF EXISTS TransferMoney;
+DROP PROCEDURE IF EXISTS GetCustomerLoans;
+DROP PROCEDURE IF EXISTS HighBalanceAccounts;
+DROP PROCEDURE IF EXISTS GetBalance;
+
+DELIMITER //
+
+CREATE PROCEDURE GetAllCustomers()
+BEGIN
+SELECT * FROM Customer;
+END //
+
+CREATE PROCEDURE GetAccountDetails(
+IN p_Account_No INT
+)
+BEGIN
+SELECT *
+FROM Account
+WHERE Account_No = p_Account_No;
+END //
+
+CREATE PROCEDURE GetCustomerAccounts(
+IN p_Customer_ID INT
+)
+BEGIN
+SELECT
+C.Customer_ID,
+C.Customer_Name,
+A.Account_No,
+A.Account_Type,
+A.Balance,
+A.Branch
+FROM Customer C
+JOIN Account A
+ON C.Customer_ID = A.Customer_ID
+WHERE C.Customer_ID = p_Customer_ID;
+END //
+
+CREATE PROCEDURE DepositMoney(
+IN p_Account_No INT,
+IN p_Amount DECIMAL(12,2)
+)
+BEGIN
+UPDATE Account
+SET Balance = Balance + p_Amount
+WHERE Account_No = p_Account_No;
+END //
+
+CREATE PROCEDURE WithdrawMoney(
+IN p_Account_No INT,
+IN p_Amount DECIMAL(12,2)
+)
+BEGIN
+UPDATE Account
+SET Balance = Balance - p_Amount
+WHERE Account_No = p_Account_No;
+END //
+
+CREATE PROCEDURE TransferMoney(
+IN SenderAccount INT,
+IN ReceiverAccount INT,
+IN TransferAmount DECIMAL(12,2)
+)
+BEGIN
+DECLARE SenderBalance DECIMAL(12,2);
+
+SELECT Balance
+INTO SenderBalance
+FROM Account
+WHERE Account_No = SenderAccount;
+
+IF SenderBalance < TransferAmount THEN
+SIGNAL SQLSTATE '45000'
+SET MESSAGE_TEXT = 'Transfer failed: Insufficient balance';
+ELSE
+UPDATE Account
+SET Balance = Balance - TransferAmount
+WHERE Account_No = SenderAccount;
+
+UPDATE Account
+SET Balance = Balance + TransferAmount
+WHERE Account_No = ReceiverAccount;
+END IF;
+END //
+
+CREATE PROCEDURE GetCustomerLoans(
+IN p_Customer_ID INT
+)
+BEGIN
+SELECT
+C.Customer_Name,
+L.Loan_ID,
+L.Loan_Type,
+L.Loan_Amount,
+L.Interest_Rate
+FROM Customer C
+JOIN Loan L
+ON C.Customer_ID = L.Customer_ID
+WHERE C.Customer_ID = p_Customer_ID;
+END //
+
+CREATE PROCEDURE HighBalanceAccounts(
+IN MinimumBalance DECIMAL(12,2)
+)
+BEGIN
+SELECT *
+FROM Account
+WHERE Balance >= MinimumBalance
+ORDER BY Balance DESC;
+END //
+
+CREATE PROCEDURE GetBalance(
+IN p_Account_No INT,
+OUT p_Balance DECIMAL(12,2)
+)
+BEGIN
+SELECT Balance
+INTO p_Balance
+FROM Account
+WHERE Account_No = p_Account_No;
+END //
+
+DELIMITER ;
+
+CALL GetAllCustomers();
+
+CALL GetAccountDetails(10001);
+
+CALL GetCustomerAccounts(101);
+
+CALL DepositMoney(10001, 5000);
+
+CALL WithdrawMoney(10001, 3000);
+
+CALL TransferMoney(10001, 10002, 5000);
+
+CALL GetCustomerLoans(101);
+
+CALL HighBalanceAccounts(50000);
+
+CALL GetBalance(10001, @CurrentBalance);
+
+SELECT @CurrentBalance;10:09 AM
